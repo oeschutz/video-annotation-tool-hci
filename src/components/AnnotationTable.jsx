@@ -1,21 +1,22 @@
 import { X, FileText, Flag } from 'lucide-react';
+import { timestampToSeconds, DEFAULT_FPS } from '../utils/timecode';
 
-function calcDuration(start, end) {
-  function toSecs(ts) {
-    if (!ts) return 0;
-    const parts = ts.split(':').map(Number);
-    if (parts.length === 3) return parts[0]*3600 + parts[1]*60 + parts[2];
-    if (parts.length === 2) return parts[0]*60 + parts[1];
-    return 0;
-  }
-  const diff = toSecs(end) - toSecs(start);
+function calcDuration(start, end, durationSeconds = null) {
+  const diff = timestampToSeconds(end, DEFAULT_FPS, durationSeconds) - timestampToSeconds(start, DEFAULT_FPS, durationSeconds);
+  const fps = DEFAULT_FPS;
   if (diff <= 0) return '—';
-  const h = Math.floor(diff/3600), m = Math.floor((diff%3600)/60), s = diff%60;
-  if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-  return `${m}:${String(s).padStart(2,'0')}`;
+  const totalFrames = Math.round(diff * fps);
+  const h = Math.floor(totalFrames / (fps * 3600));
+  const rem = totalFrames % (fps * 3600);
+  const m = Math.floor(rem / (fps * 60));
+  const rem2 = rem % (fps * 60);
+  const s = Math.floor(rem2 / fps);
+  const f = rem2 % fps;
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}:${String(f).padStart(2, '0')}`;
+  return `${m}:${String(s).padStart(2, '0')}:${String(f).padStart(2, '0')}`;
 }
 
-export default function AnnotationTable({ annotations, onEdit, onDelete, editingId }) {
+export default function AnnotationTable({ annotations, onDelete, onComment, commentingId, videoDuration = 0 }) {
   const displayRows = [...annotations].reverse();
   const stateCount = annotations.filter(a => a.type !== 'event').length;
   const eventCount = annotations.filter(a => a.type === 'event').length;
@@ -28,7 +29,7 @@ export default function AnnotationTable({ annotations, onEdit, onDelete, editing
             Annotations
           </span>
           <span style={{ fontSize:'0.67rem', color:'var(--text-3)', fontStyle:'italic' }}>
-            · click row to edit
+            · click a row to add a comment
           </span>
         </div>
         <div style={{ display:'flex', gap:'0.3rem' }}>
@@ -52,7 +53,7 @@ export default function AnnotationTable({ annotations, onEdit, onDelete, editing
       {annotations.length === 0 ? (
         <div className="empty-state">
           <FileText size={28} strokeWidth={1.5} style={{ opacity:0.3, marginBottom:'0.4rem' }} />
-          <div className="empty-text">No annotations yet.<br />Load a video and press <kbd>E</kbd> to mark a segment or <kbd>F</kbd> to log an event.</div>
+          <div className="empty-text">No annotations yet.<br />Load a video and press a shortcut key to annotate.</div>
         </div>
       ) : (
         <div className="tbl-wrap">
@@ -65,8 +66,6 @@ export default function AnnotationTable({ annotations, onEdit, onDelete, editing
                   <th>End</th>
                   <th>Dur</th>
                   <th>Code</th>
-                  <th>Secondary</th>
-                  <th>Task</th>
                   <th>Comment</th>
                   <th style={{ width:32 }}></th>
                 </tr>
@@ -78,7 +77,12 @@ export default function AnnotationTable({ annotations, onEdit, onDelete, editing
 
                   if (isEvent) {
                     return (
-                      <tr key={ann.id} className="event-row">
+                      <tr
+                        key={ann.id}
+                        className={`event-row${commentingId === ann.id ? ' editing-row' : ''}`}
+                        onClick={() => onComment?.(ann)}
+                        style={{ cursor: 'pointer' }}
+                      >
                         <td className="muted">{num}</td>
                         <td className="mono">{ann.timestamp}</td>
                         <td className="muted">—</td>
@@ -89,14 +93,10 @@ export default function AnnotationTable({ annotations, onEdit, onDelete, editing
                             <span className="badge badge-event">{ann.eventCode}</span>
                           </span>
                         </td>
-                        <td className="muted" style={{ fontSize:'0.7rem', color:'var(--text-2)', maxWidth:110, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={ann.eventLabel}>
-                          {ann.eventLabel?.split(' — ')[1] ?? ''}
+                        <td className="muted" style={{ maxWidth:160, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={ann.comment}>
+                          {ann.comment || '—'}
                         </td>
-                        <td>—</td>
-                        <td className="muted" style={{ maxWidth:120, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={ann.comment}>
-                          {ann.comment}
-                        </td>
-                        <td>
+                        <td onClick={(e) => e.stopPropagation()}>
                           <button
                             className="tbl-del-btn"
                             onClick={() => window.confirm('Delete this event?') && onDelete(ann.id)}
@@ -112,21 +112,19 @@ export default function AnnotationTable({ annotations, onEdit, onDelete, editing
                   return (
                     <tr
                       key={ann.id}
-                      className={editingId === ann.id ? 'editing-row' : ''}
-                      onClick={() => onEdit(ann)}
-                      style={{ cursor:'pointer' }}
+                      className={commentingId === ann.id ? 'editing-row' : ''}
+                      onClick={() => onComment?.(ann)}
+                      style={{ cursor: 'pointer' }}
                     >
                       <td className="muted">{num}</td>
                       <td className="mono">{ann.timeStart}</td>
                       <td className="mono">{ann.timeEnd}</td>
-                      <td className="muted">{calcDuration(ann.timeStart, ann.timeEnd)}</td>
+                      <td className="muted">{calcDuration(ann.timeStart, ann.timeEnd, videoDuration)}</td>
                       <td><span className="badge badge-p">{ann.primaryCode}</span></td>
-                      <td><span className="badge badge-s">{ann.secondaryCode}</span></td>
-                      <td><span className="task-chip">{ann.featureTask}</span></td>
                       <td className="muted" style={{ maxWidth:120, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={ann.comment}>
-                        {ann.comment}
+                        {ann.comment || '—'}
                       </td>
-                      <td onClick={e => e.stopPropagation()}>
+                      <td onClick={(e) => e.stopPropagation()}>
                         <button
                           className="tbl-del-btn"
                           onClick={() => window.confirm('Delete this annotation?') && onDelete(ann.id)}

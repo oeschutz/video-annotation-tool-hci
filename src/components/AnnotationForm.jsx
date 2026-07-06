@@ -7,7 +7,7 @@ import {
   getDefaultValues,
 } from '../utils/scheme';
 
-const TIME_REGEX = /^\d+:\d{2}:\d{2}$|^\d+:\d{2}$/;
+const TIME_REGEX = /^\d+:\d{2}:\d{2}(:\d{1,2})?$|^\d+:\d{2}$/;
 
 // The task level is the last level in the scheme by convention.
 function getTaskLevelId(scheme) {
@@ -113,9 +113,9 @@ export default function AnnotationForm({
   const validate = () => {
     const errs = {};
     if (!form.timeStart.trim()) errs.timeStart = 'Required';
-    else if (!TIME_REGEX.test(form.timeStart.trim())) errs.timeStart = 'Use H:MM:SS';
+    else if (!TIME_REGEX.test(form.timeStart.trim())) errs.timeStart = 'Use H:MM:SS:FF';
     if (!form.timeEnd.trim()) errs.timeEnd = 'Required';
-    else if (!TIME_REGEX.test(form.timeEnd.trim())) errs.timeEnd = 'Use H:MM:SS';
+    else if (!TIME_REGEX.test(form.timeEnd.trim())) errs.timeEnd = 'Use H:MM:SS:FF';
     return errs;
   };
 
@@ -175,7 +175,7 @@ export default function AnnotationForm({
             className={`f-input mono${errors.timeStart ? ' err' : ''}`}
             value={form.timeStart}
             onChange={(e) => setForm((p) => ({ ...p, timeStart: e.target.value }))}
-            placeholder="0:00:00"
+            placeholder="0:00:00:00"
           />
           {errors.timeStart && <div className="f-err">{errors.timeStart}</div>}
         </div>
@@ -185,7 +185,7 @@ export default function AnnotationForm({
             className={`f-input mono${errors.timeEnd ? ' err' : ''}`}
             value={form.timeEnd}
             onChange={(e) => setForm((p) => ({ ...p, timeEnd: e.target.value }))}
-            placeholder="0:00:00"
+            placeholder="0:00:00:00"
           />
           {errors.timeEnd && <div className="f-err">{errors.timeEnd}</div>}
         </div>

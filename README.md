@@ -28,27 +28,49 @@ npm run build
 
 | Key | Action |
 |-----|--------|
-| `E` | Mark end of current segment |
+| `E` | Edit Code (manually) |
+| `A` | AI Autocomplete |
+| `W` | Write Prompt |
+| `B` | Backtrack Writing Prompt |
+| `O` | Navigate AI Output |
+| `P` | Navigate to Past Prompts |
+| `F` | Navigate File Explorer |
+| `C` | Navigate Code Editor |
+| `I` | Interact With App |
+| `V` | View App |
+| `D` | Scroll Through Diffs |
+| `Z` | Backtrack (Undo Changes) |
+| `K` | Move Mouse Over AI Output |
+| `H` | Move Mouse Over File Explorer |
+| `J` | Move Mouse Over Code Editor |
+| `L` | Resize Windows / Change Layout |
+| `Y` | Accept AI Response |
+| `N` | Nothing |
+| `X` | Other/Review Later |
 | `Space` | Play / pause |
-| `Esc` | Close annotation modal |
+| `←` / `→` | Step back / forward one frame |
+| `Esc` | Close panels |
+
+Quick-code keys (`E`–`X`) pause the video and immediately add an annotation. The next segment starts one frame after the previous segment ends.
 
 ## Annotation workflow
 
 1. Drop an MP4 onto the video area, or click "Load Video".
-2. Watch the video. When a segment ends, press `E`. The video pauses.
-3. Fill in the codes in the modal. The time range is pre-filled.
-4. Submit. The next segment start is set automatically.
-5. Repeat until the video is fully coded.
-6. Click "Export CSV" in the top bar and give the file a name.
+2. Watch the video. When a segment ends, press the key for that behavior (e.g. `W` for Write Prompt, `E` for Edit Code manually).
+3. The annotation is added instantly and the next segment begins from that end time.
+4. Repeat until the video is fully coded.
+5. Click "Export CSV" in the top bar and give the file a name.
 
 ## CSV format
 
 ```
-Time Start,Time End,Primary Code,Secondary Code,Task,Comment
-0:00:00,0:00:10,WC (WRITE CODE),ME (ENTER/EDIT),Task 2,
+Time Start,Time End,Code,Comment
+0:00:00:00,0:00:10:00,Write Prompt,
 ```
 
-Primary and secondary codes are stored as full label strings. The format matches the original annotation CSV used in this project.
+Timestamps use `H:MM:SS:FF` format, where `FF` is the frame number within the second (0-based, at 30 fps).
+
+Primary codes are stored as full label strings.
 
 ## Annotation scheme
 

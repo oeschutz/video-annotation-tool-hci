@@ -1,25 +1,20 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import {
   Play, Pause, Volume2, Volume1, VolumeX,
-  FolderOpen, Maximize, Minimize, Square, Flag,
-  Film, SkipBack, SkipForward
+  FolderOpen, Maximize, Minimize,
+  Film,
 } from 'lucide-react';
 
-function fmt(totalSeconds) {
-  const s = Math.floor(Math.max(0, totalSeconds));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
-  return `${m}:${String(sec).padStart(2,'0')}`;
-}
-function fmtFull(totalSeconds) {
-  const s = Math.floor(Math.max(0, totalSeconds));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  return `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
-}
+import {
+  DEFAULT_FPS,
+  formatTimecodeShort,
+  frameToSeconds,
+  secondsToFrame,
+  secondsToTimestamp,
+  skipSeconds,
+  timestampToSeconds,
+} from '../utils/timecode';
+import { getShortcutByKey } from '../utils/shortcutCodes';
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
@@ -31,13 +26,15 @@ const IBtn = ({ onClick, children, title, style }) => (
   }}>{children}</button>
 );
 
-export default function VideoPlayer({ onMarkEnd, onMarkEvent, segmentStart, seekToSeconds, onVideoLoad }) {
+export default function VideoPlayer({ onQuickAnnotate, segmentStart, seekToSeconds, onVideoLoad, onDurationChange, shortcutsEnabled = true }) {
   const videoRef   = useRef(null);
   const fileRef    = useRef(null);
   const theaterRef = useRef(null);
   const hideTimer  = useRef(null);
-  const markEndRef   = useRef(null);
-  const markEventRef = useRef(null);
+  const quickAnnotateRef = useRef(null);
+  const shortcutsEnabledRef = useRef(shortcutsEnabled);
+  const timeInputRef     = useRef(null);
+  const skipBlurCommit   = useRef(false);
 
   const [src, setSrc]             = useState(null);
   const [playing, setPlaying]     = useState(false);
@@ -52,12 +49,15 @@ export default function VideoPlayer({ onMarkEnd, onMarkEvent, segmentStart, seek
   const [speedMenu, setSpeedMenu] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [hoverPct, setHoverPct]   = useState(null);
+  const [editingTime, setEditingTime] = useState(false);
+  const [timeInput, setTimeInput] = useState('');
 
   const loadFile = (file) => {
     if (!file || !file.type.startsWith('video/')) return;
     if (src) URL.revokeObjectURL(src);
     setSrc(URL.createObjectURL(file));
     setCurrentTime(0); setDuration(0);
+    onDurationChange?.(0);
     if (onVideoLoad) onVideoLoad(file);
   };
 
@@ -65,8 +65,18 @@ export default function VideoPlayer({ onMarkEnd, onMarkEvent, segmentStart, seek
     const v = videoRef.current;
     if (!v) return;
     let raf = null;
-    const onTime  = () => { if (raf) return; raf = requestAnimationFrame(() => { setCurrentTime(v.currentTime); raf = null; }); };
-    const onMeta  = () => { setDuration(v.duration); v.playbackRate = rate; };
+    const onTime  = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        setCurrentTime(v.currentTime);
+        raf = null;
+      });
+    };
+    const onMeta  = () => {
+      setDuration(v.duration);
+      onDurationChange?.(v.duration);
+      v.playbackRate = rate;
+    };
     const onPlay  = () => setPlaying(true);
     const onPause = () => setPlaying(false);
     const onVol   = () => { setVolume(v.volume); setMuted(v.muted); };
@@ -83,7 +93,7 @@ export default function VideoPlayer({ onMarkEnd, onMarkEvent, segmentStart, seek
       v.removeEventListener('volumechange', onVol);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [src]);
+  }, [src, onDurationChange]);
 
   useEffect(() => {
     const onFS = () => setFullscreen(!!document.fullscreenElement);
@@ -114,43 +124,90 @@ export default function VideoPlayer({ onMarkEnd, onMarkEvent, segmentStart, seek
     showControls();
   }, [showControls]);
 
-  const doMarkEnd = useCallback(() => {
+  const stepFrame = useCallback((direction) => {
     const v = videoRef.current;
-    if (!v) return;
-    v.pause();
-    onMarkEnd(fmtFull(v.currentTime));
-  }, [onMarkEnd]);
+    if (!v || !v.duration) return;
+    if (!v.paused) v.pause();
+    const frame = secondsToFrame(v.currentTime, DEFAULT_FPS);
+    const maxFrame = secondsToFrame(v.duration, DEFAULT_FPS);
+    const newFrame = Math.max(0, Math.min(maxFrame, frame + direction));
+    const t = frameToSeconds(newFrame, DEFAULT_FPS);
+    v.currentTime = t;
+    setCurrentTime(t);
+    showControls();
+  }, [showControls]);
 
-  const doMarkEvent = useCallback(() => {
+  const doQuickAnnotate = useCallback((shortcutKey) => {
     const v = videoRef.current;
-    if (!v || !onMarkEvent) return;
+    if (!v || !onQuickAnnotate) return;
+    const shortcut = getShortcutByKey(shortcutKey);
+    if (!shortcut) return;
     v.pause();
-    onMarkEvent(fmtFull(v.currentTime));
-  }, [onMarkEvent]);
+    const timeEnd = secondsToTimestamp(v.currentTime, DEFAULT_FPS);
+    onQuickAnnotate(timeEnd, shortcut);
+    setFlash(shortcut.label);
+    setTimeout(() => setFlash(null), 500);
+    showControls();
+  }, [onQuickAnnotate, showControls]);
 
   useEffect(() => {
-    markEndRef.current   = doMarkEnd;
-    markEventRef.current = doMarkEvent;
+    quickAnnotateRef.current = doQuickAnnotate;
+    shortcutsEnabledRef.current = shortcutsEnabled;
   });
 
   useEffect(() => {
     const onKey = (e) => {
       if (['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
-      if (e.key === 'e' || e.key === 'E') { markEndRef.current(); return; }
-      if (e.key === 'f' || e.key === 'F') { markEventRef.current?.(); return; }
-      if (e.key === ' ') { e.preventDefault(); togglePlay(); }
+      if (!shortcutsEnabledRef.current) return;
+      const shortcut = getShortcutByKey(e.key);
+      if (shortcut) { e.preventDefault(); quickAnnotateRef.current(e.key); return; }
+      if (e.key === ' ') { e.preventDefault(); togglePlay(); return; }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); stepFrame(-1); return; }
+      if (e.key === 'ArrowRight') { e.preventDefault(); stepFrame(1); }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [togglePlay]);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [togglePlay, stepFrame]);
 
   const skip = (secs) => {
     const v = videoRef.current;
     if (!v) return;
-    const t = Math.max(0, Math.min(v.duration || 0, v.currentTime + secs));
-    if (v.fastSeek) v.fastSeek(t); else v.currentTime = t;
+    const t = skipSeconds(v.currentTime, secs, DEFAULT_FPS, v.duration || 0);
+    v.currentTime = t;
+    setCurrentTime(t);
     showControls();
   };
+
+  const seekToTimestamp = useCallback((ts) => {
+    const v = videoRef.current;
+    if (!v || !ts.trim()) return;
+    const t = Math.max(0, Math.min(v.duration || 0, timestampToSeconds(ts.trim(), DEFAULT_FPS, v.duration)));
+    v.pause();
+    v.currentTime = t;
+    setCurrentTime(t);
+    showControls();
+  }, [showControls]);
+
+  const startTimeEdit = (e) => {
+    e.stopPropagation();
+    keepControls();
+    setTimeInput(formatTimecodeShort(currentTime, DEFAULT_FPS));
+    setEditingTime(true);
+  };
+
+  const commitTimeEdit = useCallback(() => {
+    if (timeInput.trim()) seekToTimestamp(timeInput);
+    setEditingTime(false);
+  }, [timeInput, seekToTimestamp]);
+
+  const cancelTimeEdit = () => {
+    skipBlurCommit.current = true;
+    setEditingTime(false);
+  };
+
+  useEffect(() => {
+    if (editingTime) timeInputRef.current?.select();
+  }, [editingTime]);
 
   const seek = (e) => {
     const v = videoRef.current;
@@ -208,8 +265,10 @@ export default function VideoPlayer({ onMarkEnd, onMarkEvent, segmentStart, seek
         {/* Flash */}
         {flash && (
           <div style={{ position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',pointerEvents:'none' }}>
-            <div className="yt-flash">
-              {flash === 'play' ? <Play size={28} fill="#fff" /> : <Pause size={28} fill="#fff" />}
+            <div className={flash === 'play' || flash === 'pause' ? 'yt-flash' : 'yt-flash-label'}>
+              {flash === 'play' ? <Play size={28} fill="#fff" /> :
+               flash === 'pause' ? <Pause size={28} fill="#fff" /> :
+               flash}
             </div>
           </div>
         )}
@@ -256,6 +315,12 @@ export default function VideoPlayer({ onMarkEnd, onMarkEvent, segmentStart, seek
               <IBtn onClick={()=>skip(-5)} title="−5s" style={{fontSize:11,color:'rgba(255,255,255,0.75)',padding:'3px 4px'}}>
                 <span style={{fontSize:11}}>−5s</span>
               </IBtn>
+              <IBtn onClick={()=>skip(-1)} title="−1s" style={{fontSize:11,color:'rgba(255,255,255,0.75)',padding:'3px 4px'}}>
+                <span style={{fontSize:11}}>−1s</span>
+              </IBtn>
+              <IBtn onClick={()=>skip(1)} title="+1s" style={{fontSize:11,color:'rgba(255,255,255,0.75)',padding:'3px 4px'}}>
+                <span style={{fontSize:11}}>+1s</span>
+              </IBtn>
               <IBtn onClick={()=>skip(5)} title="+5s" style={{fontSize:11,color:'rgba(255,255,255,0.75)',padding:'3px 4px'}}>
                 <span style={{fontSize:11}}>+5s</span>
               </IBtn>
@@ -271,7 +336,33 @@ export default function VideoPlayer({ onMarkEnd, onMarkEvent, segmentStart, seek
                 onChange={e=>{ const v=videoRef.current; const val=parseFloat(e.target.value); if(v){v.volume=val;v.muted=val===0;} }}
                 className="yt-vol-slider"
               />
-              <span className="yt-time">{fmt(currentTime)} / {fmt(duration)}</span>
+              <span className="yt-time">
+                {editingTime ? (
+                  <input
+                    ref={timeInputRef}
+                    className="yt-time-input"
+                    value={timeInput}
+                    onChange={(e) => setTimeInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      e.stopPropagation();
+                      if (e.key === 'Enter') { e.preventDefault(); commitTimeEdit(); }
+                      if (e.key === 'Escape') { e.preventDefault(); cancelTimeEdit(); }
+                    }}
+                    onBlur={() => {
+                      if (skipBlurCommit.current) { skipBlurCommit.current = false; return; }
+                      commitTimeEdit();
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    title="M:SS:FF or H:MM:SS:FF — press Enter"
+                  />
+                ) : (
+                  <button type="button" className="yt-time-btn" onClick={startTimeEdit} title="Click to seek to timestamp">
+                    {formatTimecodeShort(currentTime, DEFAULT_FPS)}
+                  </button>
+                )}
+                {' / '}
+                {formatTimecodeShort(duration, DEFAULT_FPS)}
+              </span>
             </div>
 
             <div style={{ display:'flex',alignItems:'center',gap:6 }}>
@@ -306,19 +397,6 @@ export default function VideoPlayer({ onMarkEnd, onMarkEvent, segmentStart, seek
         </div>
       </div>
 
-      {/* Mark End + Mark Event */}
-      <div className="yt-mark-bar">
-        <button className="yt-mark-end" onClick={doMarkEnd}>
-          <Square size={15} fill="currentColor" />
-          Mark End &amp; Annotate
-          <kbd className="yt-kbd">E</kbd>
-        </button>
-        <button className="yt-mark-event" onClick={doMarkEvent}>
-          <Flag size={15} />
-          Log Event
-          <kbd className="yt-kbd">F</kbd>
-        </button>
-      </div>
     </div>
   );
 }

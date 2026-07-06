@@ -1,15 +1,17 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { Sun, Moon, Upload, Download, Database, Layers } from 'lucide-react'
 import VideoPlayer from './components/VideoPlayer'
-import AnnotationModal from './components/AnnotationModal'
 import AnnotationTable from './components/AnnotationTable'
-import EventModal from './components/EventModal'
+import CommentModal from './components/CommentModal'
+import ShortcutLegend from './components/ShortcutLegend'
 import SchemePanel from './components/SchemePanel'
 import SessionPanel from './components/SessionPanel'
-import { exportAnnotationsCsv, timestampToSeconds, secondsToTimestamp } from './utils/exportCsv'
+import { exportAnnotationsCsv } from './utils/exportCsv'
 import { saveSession, loadSessionByVideo } from './utils/db'
 import { parseAnnotationsCsv } from './utils/importCsv'
 import { DEFAULT_SCHEME } from './utils/scheme'
+import { buildQuickAnnotation } from './utils/shortcutCodes'
+import { advanceOneFrame, timestampToSeconds, DEFAULT_FPS } from './utils/timecode'
 
 function loadPersistedScheme() {
   try {
@@ -25,11 +27,7 @@ function generateSessionId() {
 
 function App() {
   const [annotations, setAnnotations] = useState([])
-  const [segmentStart, setSegmentStart] = useState('0:00:00')
-  const [modalOpen, setModalOpen] = useState(false)
-  const [pendingEnd, setPendingEnd] = useState(null)
-  const [editingAnnotation, setEditingAnnotation] = useState(null)
-  const [lastTask, setLastTask] = useState(null)   // null = use scheme default
+  const [segmentStart, setSegmentStart] = useState('0:00:00:00')
   const [videoFileName, setVideoFileName] = useState(null)
   const [seekToSeconds, setSeekToSeconds] = useState(null)
   const [theme, setTheme] = useState(() => localStorage.getItem('vat-theme') || 'light')
@@ -37,8 +35,8 @@ function App() {
   const [sessionId, setSessionId] = useState(null)
   const [schemePanelOpen, setSchemePanelOpen] = useState(false)
   const [sessionPanelOpen, setSessionPanelOpen] = useState(false)
-  const [eventModalOpen, setEventModalOpen] = useState(false)
-  const [pendingEventTimestamp, setPendingEventTimestamp] = useState(null)
+  const [videoDuration, setVideoDuration] = useState(0)
+  const [commentingAnnotation, setCommentingAnnotation] = useState(null)
   const csvImportRef = useRef(null)
 
   useEffect(() => {
@@ -54,10 +52,9 @@ function App() {
       videoName: videoFileName,
       annotations,
       segmentStart,
-      lastTask: lastTask ?? '',
       schemeId: scheme.name,
     }).catch(console.error)
-  }, [annotations, segmentStart, lastTask, videoFileName, sessionId])
+  }, [annotations, segmentStart, videoFileName, sessionId])
 
   const handleVideoLoad = useCallback(async (file) => {
     setVideoFileName(file.name)
@@ -66,7 +63,7 @@ function App() {
     if (sessionId) {
       const lastState = annotations.filter(a => a.type !== 'event').slice(-1)[0]
       if (lastState?.timeStart) {
-        setSeekToSeconds(timestampToSeconds(lastState.timeStart))
+        setSeekToSeconds(timestampToSeconds(lastState.timeStart, DEFAULT_FPS, videoDuration))
         setTimeout(() => setSeekToSeconds(null), 500)
       }
       return
@@ -80,11 +77,10 @@ function App() {
       if (resume) {
         setSessionId(existing.id)
         setAnnotations(existing.annotations)
-        setSegmentStart(existing.segmentStart || '0:00:00')
-        setLastTask(existing.lastTask || null)
+        setSegmentStart(existing.segmentStart || '0:00:00:00')
         const lastState = (existing.annotations || []).filter(a => a.type !== 'event').slice(-1)[0]
         if (lastState?.timeStart) {
-          setSeekToSeconds(timestampToSeconds(lastState.timeStart))
+          setSeekToSeconds(timestampToSeconds(lastState.timeStart, DEFAULT_FPS, videoDuration))
           setTimeout(() => setSeekToSeconds(null), 500)
         }
         return
@@ -94,64 +90,35 @@ function App() {
     const newId = generateSessionId()
     setSessionId(newId)
     setAnnotations([])
-    setSegmentStart('0:00:00')
-    setLastTask(null)
+    setSegmentStart('0:00:00:00')
   }, [sessionId, annotations])
 
-  const handleMarkEnd = useCallback((timeStr) => {
-    setPendingEnd(timeStr)
-    setEditingAnnotation(null)
-    setModalOpen(true)
-  }, [])
-
-  const handleModalSubmit = (annotation) => {
-    setAnnotations((prev) => {
-      const exists = prev.find((a) => a.id === annotation.id)
-      if (exists) return prev.map((a) => (a.id === annotation.id ? annotation : a))
-      return [...prev, annotation]
+  const handleQuickAnnotate = useCallback((timeEnd, shortcut) => {
+    const annotation = buildQuickAnnotation({
+      shortcut,
+      timeStart: segmentStart,
+      timeEnd,
     })
-    if (!editingAnnotation) {
-      const nextStart = secondsToTimestamp(timestampToSeconds(annotation.timeEnd) + 1)
-      setSegmentStart(nextStart)
-      // Track last task: prefer the scheme-level 'task' id, fallback to featureTask
-      setLastTask(annotation.task ?? annotation.featureTask ?? lastTask)
-    }
-    setModalOpen(false)
-    setPendingEnd(null)
-    setEditingAnnotation(null)
-  }
-
-  const handleModalCancel = () => {
-    setModalOpen(false)
-    setPendingEnd(null)
-    setEditingAnnotation(null)
-  }
-
-  const handleMarkEvent = useCallback((timeStr) => {
-    setPendingEventTimestamp(timeStr)
-    setEventModalOpen(true)
-  }, [])
-
-  const handleEventSubmit = useCallback((event) => {
-    setAnnotations(prev => [...prev, event])
-    setEventModalOpen(false)
-    setPendingEventTimestamp(null)
-  }, [])
-
-  const handleEventCancel = useCallback(() => {
-    setEventModalOpen(false)
-    setPendingEventTimestamp(null)
-  }, [])
-
-  const handleEdit = (annotation) => {
-    setEditingAnnotation(annotation)
-    setPendingEnd(annotation.timeEnd)
-    setModalOpen(true)
-  }
+    setAnnotations((prev) => [...prev, annotation])
+    setSegmentStart(advanceOneFrame(timeEnd))
+  }, [segmentStart])
 
   const handleDelete = (id) => {
     setAnnotations((prev) => prev.filter((a) => a.id !== id))
   }
+
+  const handleComment = useCallback((annotation) => {
+    setCommentingAnnotation(annotation)
+  }, [])
+
+  const handleCommentSave = useCallback((id, comment) => {
+    setAnnotations((prev) => prev.map((a) => (a.id === id ? { ...a, comment } : a)))
+    setCommentingAnnotation(null)
+  }, [])
+
+  const handleCommentCancel = useCallback(() => {
+    setCommentingAnnotation(null)
+  }, [])
 
   const handleExport = () => {
     if (annotations.length === 0) { alert('No annotations to export.'); return }
@@ -173,11 +140,10 @@ function App() {
       setAnnotations(parsed)
       const lastState = parsed.filter(a => a.type !== 'event').slice(-1)[0]
       if (lastState?.timeEnd) {
-        setSegmentStart(secondsToTimestamp(timestampToSeconds(lastState.timeEnd) + 1))
-        setLastTask(lastState.featureTask || null)
+        setSegmentStart(advanceOneFrame(lastState.timeEnd))
       }
       if (lastState?.timeStart) {
-        setSeekToSeconds(timestampToSeconds(lastState.timeStart))
+        setSeekToSeconds(timestampToSeconds(lastState.timeStart, DEFAULT_FPS, videoDuration))
         setTimeout(() => setSeekToSeconds(null), 500)
       }
     }
@@ -194,8 +160,7 @@ function App() {
     setSessionId(session.id)
     setVideoFileName(session.videoName)
     setAnnotations(session.annotations || [])
-    setSegmentStart(session.segmentStart || '0:00:00')
-    setLastTask(session.lastTask || null)
+    setSegmentStart(session.segmentStart || '0:00:00:00')
     setSessionPanelOpen(false)
     // Seek once user loads the video file (handled in handleVideoLoad)
   }, [])
@@ -204,13 +169,6 @@ function App() {
     // If the deleted session was current, clear it
     setSessionId(null)
   }, [])
-
-  // Resolve the default task value for the modal: use lastTask if set,
-  // otherwise first option of the task level in the current scheme
-  const resolvedDefaultTask = lastTask ?? (() => {
-    const taskLevel = scheme.levels[scheme.levels.length - 1]
-    return taskLevel?.options?.[0]?.value ?? 'T1'
-  })()
 
   return (
     <div style={{ minHeight: '100vh' }}>
@@ -226,10 +184,8 @@ function App() {
         </div>
         <div className="nav-actions">
           <div className="nav-shortcuts d-none d-md-flex">
-            <span><kbd>E</kbd> mark end</span>
-            <span><kbd>F</kbd> log event</span>
+            <span><kbd>E</kbd>–<kbd>X</kbd> annotate</span>
             <span><kbd>Space</kbd> play/pause</span>
-            <span><kbd>Esc</kbd> cancel</span>
           </div>
           <button
             className="btn-icon"
@@ -282,40 +238,31 @@ function App() {
       }}>
         <div style={{ flex: '0 0 75%', minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>
           <VideoPlayer
-            onMarkEnd={handleMarkEnd}
-            onMarkEvent={handleMarkEvent}
+            onQuickAnnotate={handleQuickAnnotate}
             segmentStart={segmentStart}
             seekToSeconds={seekToSeconds}
             onVideoLoad={handleVideoLoad}
+            onDurationChange={setVideoDuration}
+            shortcutsEnabled={!commentingAnnotation}
           />
         </div>
-        <div style={{ flex: 1, minWidth: 0, height: '100%', overflowY: 'auto' }}>
+        <div style={{ flex: 1, minWidth: 0, height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <ShortcutLegend />
           <AnnotationTable
             annotations={annotations}
-            onEdit={handleEdit}
             onDelete={handleDelete}
-            editingId={editingAnnotation?.id || null}
+            onComment={handleComment}
+            commentingId={commentingAnnotation?.id || null}
+            videoDuration={videoDuration}
           />
         </div>
       </div>
 
-      <AnnotationModal
-        open={modalOpen}
-        scheme={scheme}
-        timeStart={editingAnnotation ? editingAnnotation.timeStart : segmentStart}
-        timeEnd={pendingEnd || ''}
-        editingAnnotation={editingAnnotation}
-        defaultTask={resolvedDefaultTask}
-        onSubmit={handleModalSubmit}
-        onCancel={handleModalCancel}
-      />
-
-      <EventModal
-        key={pendingEventTimestamp}
-        open={eventModalOpen}
-        timestamp={pendingEventTimestamp || ''}
-        onSubmit={handleEventSubmit}
-        onCancel={handleEventCancel}
+      <CommentModal
+        open={!!commentingAnnotation}
+        annotation={commentingAnnotation}
+        onSubmit={handleCommentSave}
+        onCancel={handleCommentCancel}
       />
 
       <SchemePanel
