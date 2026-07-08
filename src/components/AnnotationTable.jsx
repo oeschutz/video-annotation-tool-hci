@@ -16,7 +16,7 @@ function calcDuration(start, end, durationSeconds = null) {
   return `${m}:${String(s).padStart(2, '0')}:${String(f).padStart(2, '0')}`;
 }
 
-export default function AnnotationTable({ annotations, onDelete, onComment, commentingId, videoDuration = 0 }) {
+export default function AnnotationTable({ annotations, onDelete, onEdit, editingId, videoDuration = 0 }) {
   const displayRows = [...annotations].reverse();
   const stateCount = annotations.filter(a => a.type !== 'event').length;
   const eventCount = annotations.filter(a => a.type === 'event').length;
@@ -29,7 +29,7 @@ export default function AnnotationTable({ annotations, onDelete, onComment, comm
             Annotations
           </span>
           <span style={{ fontSize:'0.67rem', color:'var(--text-3)', fontStyle:'italic' }}>
-            · click a row to add a comment
+            · click a row to edit
           </span>
         </div>
         <div style={{ display:'flex', gap:'0.3rem' }}>
@@ -79,8 +79,8 @@ export default function AnnotationTable({ annotations, onDelete, onComment, comm
                     return (
                       <tr
                         key={ann.id}
-                        className={`event-row${commentingId === ann.id ? ' editing-row' : ''}`}
-                        onClick={() => onComment?.(ann)}
+                        className={`event-row${editingId === ann.id ? ' editing-row' : ''}`}
+                        onClick={() => onEdit?.(ann)}
                         style={{ cursor: 'pointer' }}
                       >
                         <td className="muted">{num}</td>
@@ -112,8 +112,8 @@ export default function AnnotationTable({ annotations, onDelete, onComment, comm
                   return (
                     <tr
                       key={ann.id}
-                      className={commentingId === ann.id ? 'editing-row' : ''}
-                      onClick={() => onComment?.(ann)}
+                      className={editingId === ann.id ? 'editing-row' : ''}
+                      onClick={() => onEdit?.(ann)}
                       style={{ cursor: 'pointer' }}
                     >
                       <td className="muted">{num}</td>

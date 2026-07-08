@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { Sun, Moon, Upload, Download, Database, Layers } from 'lucide-react'
 import VideoPlayer from './components/VideoPlayer'
 import AnnotationTable from './components/AnnotationTable'
-import CommentModal from './components/CommentModal'
+import EditAnnotationModal from './components/EditAnnotationModal'
 import ShortcutLegend from './components/ShortcutLegend'
 import SchemePanel from './components/SchemePanel'
 import SessionPanel from './components/SessionPanel'
@@ -36,7 +36,7 @@ function App() {
   const [schemePanelOpen, setSchemePanelOpen] = useState(false)
   const [sessionPanelOpen, setSessionPanelOpen] = useState(false)
   const [videoDuration, setVideoDuration] = useState(0)
-  const [commentingAnnotation, setCommentingAnnotation] = useState(null)
+  const [editingAnnotation, setEditingAnnotation] = useState(null)
   const csvImportRef = useRef(null)
 
   useEffect(() => {
@@ -107,17 +107,17 @@ function App() {
     setAnnotations((prev) => prev.filter((a) => a.id !== id))
   }
 
-  const handleComment = useCallback((annotation) => {
-    setCommentingAnnotation(annotation)
+  const handleEdit = useCallback((annotation) => {
+    setEditingAnnotation(annotation)
   }, [])
 
-  const handleCommentSave = useCallback((id, comment) => {
-    setAnnotations((prev) => prev.map((a) => (a.id === id ? { ...a, comment } : a)))
-    setCommentingAnnotation(null)
+  const handleEditSave = useCallback((updated) => {
+    setAnnotations((prev) => prev.map((a) => (a.id === updated.id ? updated : a)))
+    setEditingAnnotation(null)
   }, [])
 
-  const handleCommentCancel = useCallback(() => {
-    setCommentingAnnotation(null)
+  const handleEditCancel = useCallback(() => {
+    setEditingAnnotation(null)
   }, [])
 
   const handleExport = () => {
@@ -243,7 +243,7 @@ function App() {
             seekToSeconds={seekToSeconds}
             onVideoLoad={handleVideoLoad}
             onDurationChange={setVideoDuration}
-            shortcutsEnabled={!commentingAnnotation}
+            shortcutsEnabled={!editingAnnotation}
           />
         </div>
         <div style={{ flex: 1, minWidth: 0, height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -251,18 +251,18 @@ function App() {
           <AnnotationTable
             annotations={annotations}
             onDelete={handleDelete}
-            onComment={handleComment}
-            commentingId={commentingAnnotation?.id || null}
+            onEdit={handleEdit}
+            editingId={editingAnnotation?.id || null}
             videoDuration={videoDuration}
           />
         </div>
       </div>
 
-      <CommentModal
-        open={!!commentingAnnotation}
-        annotation={commentingAnnotation}
-        onSubmit={handleCommentSave}
-        onCancel={handleCommentCancel}
+      <EditAnnotationModal
+        open={!!editingAnnotation}
+        annotation={editingAnnotation}
+        onSubmit={handleEditSave}
+        onCancel={handleEditCancel}
       />
 
       <SchemePanel

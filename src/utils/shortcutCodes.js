@@ -13,9 +13,9 @@ export const ANNOTATION_SHORTCUTS = [
   { key: 'V', label: 'View App', code: 'V' },
   { key: 'D', label: 'Scroll Through Diffs', code: 'D' },
   { key: 'Z', label: 'Backtrack (Undo Changes)', code: 'Z' },
-  { key: 'K', label: 'Move Mouse Over AI Output', code: 'K' },
-  { key: 'H', label: 'Move Mouse Over File Explorer', code: 'H' },
-  { key: 'J', label: 'Move Mouse Over Code Editor', code: 'J' },
+  { key: 'K', label: 'Hover/Move Mouse Over AI Output', code: 'K' },
+  { key: 'H', label: 'Hover/Move Mouse Over File Explorer', code: 'H' },
+  { key: 'J', label: 'Hover/Move Mouse Over Code Editor', code: 'J' },
   { key: 'L', label: 'Resize Windows / Change Layout', code: 'L' },
   { key: 'Y', label: 'Accept AI Response', code: 'Y' },
   { key: 'N', label: 'Nothing', code: 'N' },
@@ -26,8 +26,16 @@ const SHORTCUT_BY_KEY = Object.fromEntries(
   ANNOTATION_SHORTCUTS.map((s) => [s.key.toLowerCase(), s])
 );
 
+const SHORTCUT_BY_CODE = Object.fromEntries(
+  ANNOTATION_SHORTCUTS.map((s) => [s.code.toLowerCase(), s])
+);
+
 export function getShortcutByKey(key) {
   return SHORTCUT_BY_KEY[key?.toLowerCase()] ?? null;
+}
+
+export function getShortcutByCode(code) {
+  return SHORTCUT_BY_CODE[code?.toLowerCase()] ?? null;
 }
 
 export function buildQuickAnnotation({ shortcut, timeStart, timeEnd }) {

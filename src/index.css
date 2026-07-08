@@ -348,6 +348,7 @@ body {
 .f-input.mono { font-family: var(--mono); }
 .f-input::placeholder { color: var(--text-3); }
 .f-input.err { border-color: var(--danger); }
+.f-select.err { border-color: var(--danger); }
 .f-err { font-size: 0.68rem; color: var(--danger); margin-top: 2px; }
 .f-select option { background: var(--input-bg); color: var(--input-color); }
 .f-textarea { resize: vertical; min-height: 58px; }
